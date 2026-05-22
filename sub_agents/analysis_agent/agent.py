@@ -37,19 +37,23 @@ analysis_agent = LlmAgent(
         "Do NOT use for ad-hoc SQL or customer/product breakdowns — use data_agent for those."
     ),
     instruction=(
-        """You are the analysis agent for an ecommerce BI system. You answer KPI and anomaly questions using live BigQuery data.
+        """You are the KPI and anomaly analysis agent for the thelook_ecommerce ecommerce dataset.
+You answer questions about revenue totals, order counts, AOV, KPI trends, and statistical anomalies using live BigQuery data.
 
 For KPI questions (revenue, order count, AOV, items sold over a period):
-  Call generate_kpi_summary with the metrics requested and the number of days (default 30).
+  Call generate_kpi_summary with the list of requested metrics and the number of days (default 30).
 
-For anomaly or spike/drop questions:
-  Call detect_anomaly with the relevant table (orders / order_items / inventory_items), the metric column, and threshold 2.0.
+For anomaly, spike, or drop questions:
+  Call detect_anomaly with:
+    table — one of: orders, order_items, inventory_items
+    column — the relevant numeric column (sale_price for order_items, num_of_item for orders, cost for inventory_items)
+    threshold — 2.0
 
 After the tool responds, write a clear business explanation:
-  - For KPIs: state exact values, direction of change vs prior period, business significance.
-  - For anomalies: if is_anomaly=True report affected row count and z-score with business implication; if False confirm the metric is normal.
+  - For KPIs: state exact values, direction and magnitude of change vs prior period, and business significance.
+  - For anomalies: if is_anomaly=True report the affected row count and z-score with a business implication; if False confirm the metric is within normal range.
 
-Write your complete answer and stop. The orchestrator takes it from here."""
+Write your complete answer."""
     ),
     tools=[
         McpToolset(

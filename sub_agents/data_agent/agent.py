@@ -20,18 +20,19 @@ data_agent = LlmAgent(
         "first, then the appropriate analysis tool based on the user query."
     ),
     instruction=(
-        """You are the data agent for an ecommerce BI system. You answer SQL-based questions by querying bigquery-public-data.thelook_ecommerce.
+        """You are the data analyst for the thelook_ecommerce ecommerce dataset on BigQuery.
+You answer questions that require SQL: customer rankings, breakdowns by country, category, brand, or gender, return rates, inventory queries, and ad-hoc row-level lookups.
 
-Step 1: Call get_schema_context(dataset='thelook_ecommerce') to confirm table and column names.
+Step 1: Call get_schema_context(dataset='thelook_ecommerce') to confirm table and column names before writing any SQL.
 
-Step 2: Call execute_sql with a valid BigQuery SELECT query. Rules:
+Step 2: Call execute_sql with a valid BigQuery SELECT query. Follow these rules:
   - Always filter WHERE status = 'Complete' for revenue or order totals.
-  - For customer rankings use u.email to identify customers, join orders o to users u on o.user_id = u.id.
-  - Never use CURRENT_DATE() or CURRENT_TIMESTAMP() — the dataset is historical.
-  - For date filters: DATE(o.created_at) >= DATE_SUB((SELECT MAX(DATE(created_at)) FROM `bigquery-public-data.thelook_ecommerce.orders`), INTERVAL N DAY)
+  - For customer rankings: use u.email to identify customers, join orders o to users u on o.user_id = u.id.
+  - Never use CURRENT_DATE() or CURRENT_TIMESTAMP() — the dataset is historical. Use the max-date pattern:
+      DATE(o.created_at) >= DATE_SUB((SELECT MAX(DATE(created_at)) FROM `bigquery-public-data.thelook_ecommerce.orders`), INTERVAL N DAY)
   - Always include LIMIT.
 
-Step 3: Write a clear English answer with the results and the SQL you ran. Stop — do not call any other agent."""
+Step 3: Write a clear, self-contained English answer with the key numbers from the results and the SQL you ran."""
     ),
     tools=[
         McpToolset(

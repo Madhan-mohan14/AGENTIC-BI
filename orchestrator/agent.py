@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from google.adk.agents import LlmAgent
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.tools.agent_tool import AgentTool
 from google.genai import types
 from google.genai.types import Content
 
@@ -51,7 +52,7 @@ audit_agent = RemoteA2aAgent(
 
 
 def _before_orchestrator(callback_context: CallbackContext) -> Content | None:
-    """Inject session_id into state so orchestrator can pass it to audit_agent."""
+    """Inject session_id into state before each orchestrator turn."""
     try:
         session_id = callback_context._invocation_context.session.id
         callback_context.state["session_id"] = session_id
@@ -60,37 +61,49 @@ def _before_orchestrator(callback_context: CallbackContext) -> Content | None:
     return None
 
 
-
 # ── Orchestrator ─────────────────────────────────────────────────────────────
 orchestrator = LlmAgent(
     name="orchestrator",
     model="gemini-2.5-flash",
     description="Root orchestrator for the Agentic BI system.",
-    tools=[],
-    sub_agents=[rag_agent, analysis_agent, data_agent, research_agent, audit_agent],
+    tools=[
+        AgentTool(agent=rag_agent),
+        AgentTool(agent=data_agent),
+        AgentTool(agent=analysis_agent),
+        AgentTool(agent=research_agent),
+        AgentTool(agent=audit_agent),
+    ],
     before_agent_callback=_before_orchestrator,
     instruction=(
-        """You are the orchestrator of an Agentic Business Intelligence system. You route every question through three agents in order. You never answer data or analytics questions yourself.
+        """You are the root orchestrator of an Agentic Business Intelligence system.
+You never answer data or analytics questions yourself. You always call your agent tools.
 
-For greetings (hi, hello, thanks) or questions about your capabilities: reply directly in one line.
+For greetings, thanks, or questions about your capabilities: respond directly in one line. Do not call any tool.
 
-For every analytics or business question, run all three stages in order — no skipping:
+For every analytics or business question, call these agents in sequence. Do not stop early.
 
-Stage 1: Call transfer_to_agent(agent_name="rag_agent") with the user's question.
+STEP 1 — Call rag_agent with the user's exact question as the request.
+Read the result:
+- If it starts with "is_cached=True": take the text after that line as the cached answer. Skip Step 2. Go to Step 3 and include is_cached=True.
+- If it is "ANSWER NOT FOUND": continue to Step 2.
 
-Stage 2: Call the right specialist based on the question type:
-  - Top customers, rankings, SQL queries, breakdowns by country/category/brand/gender, return rates, inventory → transfer_to_agent(agent_name="data_agent")
-  - Revenue totals, order counts, AOV, KPI summaries, anomaly detection, metric spikes or drops → transfer_to_agent(agent_name="analysis_agent")
-  - WHY something happened, market context, industry trends, external causes → transfer_to_agent(agent_name="research_agent")
+STEP 2 — Call exactly one specialist (only when Step 1 returned "ANSWER NOT FOUND"):
+- Customer rankings, top-N lists, breakdowns by country/category/brand/gender, return rates, inventory → call data_agent
+- Revenue totals, order counts, AOV, KPI trends, anomaly or spike detection → call analysis_agent
+- WHY something happened, market context, external causes → call research_agent
+Take the specialist's full response as the answer.
 
-Stage 3: Call transfer_to_agent(agent_name="audit_agent") with the original question and the full answer from Stage 2.
+STEP 3 — Call audit_agent with this exact text as the request:
+  QUESTION: <original user question>
+  ANSWER: <full answer from Step 1 or Step 2>
+  is_cached=True   ← include this line only if the answer came from the Step 1 cache
 
-After audit_agent responds:
-  - Starts with "APPROVED" → return the answer to the user exactly as given.
-  - Starts with "NEEDS_REGENERATION" → call the same Stage 2 specialist once more, then call audit_agent again.
-  - Starts with "ESCALATED_TO_HITL" → tell the user their question has been escalated to human review.
+When audit_agent responds:
+- Starts with "APPROVED" → return the answer to the user exactly as given after "APPROVED ... — ".
+- Starts with "NEEDS_REGENERATION" → call the same Step 2 specialist once more, then call audit_agent again with the new answer.
+- Starts with "ESCALATED_TO_HITL" → tell the user: "Your question has been escalated to human review."
 
-You must always complete all three stages before responding to the user."""
+Never respond to the user with data yourself. Always complete all three steps and reach APPROVED or ESCALATED_TO_HITL first."""
     ),
     generate_content_config=types.GenerateContentConfig(
         temperature=0.4,

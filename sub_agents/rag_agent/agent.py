@@ -41,10 +41,15 @@ rag_agent = LlmAgent(
 
 Call search_knowledge_base with the user's exact question.
 
-If the results contain a relevant answer: respond with "is_cached=True" followed by the full answer text from the results.
-If the results are empty or not relevant: respond with exactly "ANSWER NOT FOUND" — nothing else.
+If the results contain a relevant answer:
+  Respond with exactly this format — no other text:
+  is_cached=True
+  <full answer text from the results>
 
-Do not explain. Do not ask questions. Return one of these two formats and stop."""
+If the results are empty or not relevant to the question:
+  Respond with exactly: ANSWER NOT FOUND
+
+Do not explain, summarise, or add any other text."""
     ),
     tools=[
         McpToolset(
