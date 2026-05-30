@@ -40,7 +40,8 @@ Step 3: Write a clear, self-contained English answer with the key numbers from t
                 url=_MCP_URL,
                 timeout=30.0,
                 sse_read_timeout=120.0,
-            )
+            ),
+            tool_filter=["get_schema_context", "execute_sql"],
         )
     ],
     generate_content_config=types.GenerateContentConfig(

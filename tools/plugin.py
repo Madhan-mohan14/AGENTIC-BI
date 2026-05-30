@@ -1,13 +1,20 @@
 import logging
+import os
 import time
+from datetime import datetime, timezone
 
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins import BasePlugin
 from google.adk.tools import BaseTool
 from google.adk.tools.tool_context import ToolContext
+from google.genai import types
+from google.genai.types import Content
 
 logger = logging.getLogger(__name__)
+
+_BQ_DATASET = "agent_analytics"
+_BQ_TABLE = "tool_events"
 
 # MCP tools served by the remote FastMCP server
 _MCP_TOOLS = {
@@ -116,15 +123,23 @@ class BIAgentPlugin(BasePlugin):
 
         if "quota" in error_str.lower() or "RESOURCE_EXHAUSTED" in error_str:
             return LlmResponse(
-                text=(
-                    "I'm temporarily rate-limited by the AI model. "
-                    "Your query has been noted — please retry in 30 seconds."
+                content=Content(
+                    role="model",
+                    parts=[types.Part(text=(
+                        "I'm temporarily rate-limited by the AI model. "
+                        "Your query has been noted — please retry in 30 seconds."
+                    ))],
                 )
             )
 
         if "503" in error_str or "overloaded" in error_str.lower():
             return LlmResponse(
-                text="The AI model is temporarily overloaded. Please retry in 10 seconds."
+                content=Content(
+                    role="model",
+                    parts=[types.Part(text=(
+                        "The AI model is temporarily overloaded. Please retry in 10 seconds."
+                    ))],
+                )
             )
 
         return None  # unknown model error — re-raise
@@ -146,16 +161,79 @@ class BIAgentPlugin(BasePlugin):
 
 class BigQueryAnalyticsPlugin(BasePlugin):
     """
-    Tracks tool provenance for every tool call: which layer answered
-    (MCP / TOOLBOX / BUILTIN / SUB_AGENT), latency, and tool name.
+    Writes tool execution events to BigQuery for the GOVERN + OPTIMIZE pillars.
 
-    Provenance is written to session state under 'tool_provenance' so the
-    orchestrator can surface it in audit logs and Langfuse traces.
+    Every tool call (success or error) is written as a row to:
+        <project>.agent_analytics.tool_events
+
+    The table is created on first use if it doesn't exist. Rows include:
+    timestamp, session_id, tool_name, layer, latency_ms, success, error_msg,
+    args_keys. optimize.py reads this table to pull traces with score < 0.7.
+
+    Also keeps session-state provenance for Langfuse/OTel traces (unchanged
+    from the stub so downstream consumers are not broken).
     """
+
+    _SCHEMA = [
+        {"name": "event_time",  "type": "TIMESTAMP", "mode": "REQUIRED"},
+        {"name": "session_id",  "type": "STRING",    "mode": "NULLABLE"},
+        {"name": "tool_name",   "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "layer",       "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "latency_ms",  "type": "INTEGER",   "mode": "REQUIRED"},
+        {"name": "success",     "type": "BOOL",      "mode": "REQUIRED"},
+        {"name": "error_msg",   "type": "STRING",    "mode": "NULLABLE"},
+        {"name": "args_keys",   "type": "STRING",    "mode": "NULLABLE"},
+    ]
 
     def __init__(self) -> None:
         super().__init__(name="bigquery_analytics_plugin")
         self._call_start: dict[str, float] = {}
+        self._project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+        self._bq = None
+        self._table_ref = None
+        self._table_ready = False
+        if self._project:
+            self._init_bq()
+
+    def _init_bq(self) -> None:
+        try:
+            from google.cloud import bigquery
+            self._bq = bigquery.Client(project=self._project)
+            dataset_ref = f"{self._project}.{_BQ_DATASET}"
+            table_ref = f"{dataset_ref}.{_BQ_TABLE}"
+            self._table_ref = table_ref
+            # create dataset if missing
+            try:
+                self._bq.get_dataset(dataset_ref)
+            except Exception:
+                from google.cloud.bigquery import Dataset
+                ds = Dataset(dataset_ref)
+                ds.location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+                self._bq.create_dataset(ds, exists_ok=True)
+                logger.info("[bq_analytics] created dataset %s", dataset_ref)
+            # create table if missing
+            try:
+                self._bq.get_table(table_ref)
+            except Exception:
+                from google.cloud.bigquery import Table, SchemaField
+                schema = [SchemaField(f["name"], f["type"], mode=f["mode"]) for f in self._SCHEMA]
+                tbl = Table(table_ref, schema=schema)
+                self._bq.create_table(tbl, exists_ok=True)
+                logger.info("[bq_analytics] created table %s", table_ref)
+            self._table_ready = True
+            logger.info("[bq_analytics] ready — writing to %s", table_ref)
+        except Exception as exc:
+            logger.warning("[bq_analytics] init failed (%s) — events will log-only", exc)
+
+    def _write_row(self, row: dict) -> None:
+        if not self._table_ready or self._bq is None:
+            return
+        try:
+            errors = self._bq.insert_rows_json(self._table_ref, [row])
+            if errors:
+                logger.warning("[bq_analytics] insert errors: %s", errors)
+        except Exception as exc:
+            logger.warning("[bq_analytics] insert failed: %s", exc)
 
     async def before_tool_call(
         self,
@@ -177,20 +255,27 @@ class BigQueryAnalyticsPlugin(BasePlugin):
             (time.monotonic() - self._call_start.pop(tool.name, time.monotonic())) * 1000
         )
         layer = _resolve_layer(tool.name)
-        provenance = {
-            "tool": tool.name,
+        session_id = tool_context.state.get("session_id", "")
+        row = {
+            "event_time": datetime.now(timezone.utc).isoformat(),
+            "session_id": session_id,
+            "tool_name": tool.name,
             "layer": layer,
             "latency_ms": elapsed_ms,
-            "args_keys": list(args.keys()),
             "success": "error" not in tool_response,
+            "error_msg": None,
+            "args_keys": ",".join(args.keys()),
         }
+        self._write_row(row)
+        # keep session-state provenance for OTel/Langfuse
+        provenance = {**row, "args_keys": list(args.keys())}
         tool_context.state["tool_provenance"] = provenance
         history: list = tool_context.state.get("tool_provenance_history", [])
         history.append(provenance)
-        tool_context.state["tool_provenance_history"] = history[-20:]  # keep last 20
+        tool_context.state["tool_provenance_history"] = history[-20:]
         logger.info(
-            "[provenance] tool=%s layer=%s latency_ms=%d success=%s",
-            tool.name, layer, elapsed_ms, provenance["success"],
+            "[bq_analytics] tool=%s layer=%s latency_ms=%d success=%s",
+            tool.name, layer, elapsed_ms, row["success"],
         )
 
     async def on_tool_error(
@@ -204,19 +289,25 @@ class BigQueryAnalyticsPlugin(BasePlugin):
             (time.monotonic() - self._call_start.pop(tool.name, time.monotonic())) * 1000
         )
         layer = _resolve_layer(tool.name)
-        provenance = {
-            "tool": tool.name,
+        session_id = tool_context.state.get("session_id", "")
+        row = {
+            "event_time": datetime.now(timezone.utc).isoformat(),
+            "session_id": session_id,
+            "tool_name": tool.name,
             "layer": layer,
             "latency_ms": elapsed_ms,
             "success": False,
-            "error": str(error)[:200],
+            "error_msg": str(error)[:500],
+            "args_keys": ",".join(args.keys()),
         }
+        self._write_row(row)
+        provenance = {**row, "args_keys": list(args.keys())}
         tool_context.state["tool_provenance"] = provenance
         history: list = tool_context.state.get("tool_provenance_history", [])
         history.append(provenance)
         tool_context.state["tool_provenance_history"] = history[-20:]
         logger.warning(
-            "[provenance] tool=%s layer=%s latency_ms=%d ERROR=%s",
+            "[bq_analytics] tool=%s layer=%s latency_ms=%d ERROR=%s",
             tool.name, layer, elapsed_ms, str(error)[:100],
         )
         return None  # let BIAgentPlugin.on_tool_error handle recovery

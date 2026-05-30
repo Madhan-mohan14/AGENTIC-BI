@@ -77,7 +77,7 @@ try:
     _bq_client = _bq.Client(project=_PROJECT)
 except Exception as _bq_init_err:
     _bq_client = None
-    print(f"[bi_tools_server] BigQuery client init failed: {_bq_init_err}")
+    logger.warning("[bi_tools_server] BigQuery client init failed: %s", _bq_init_err)
 
 
 def _bq_query_sync(sql: str) -> list:
@@ -87,7 +87,7 @@ def _bq_query_sync(sql: str) -> list:
 
 
 async def _bq_query(sql: str) -> list:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_executor, _bq_query_sync, sql)
 
 
@@ -192,6 +192,8 @@ async def detect_anomaly(table: str, column: str, threshold: float = 2.0) -> Ano
 
     mean = statistics.mean(values)
     stdev = statistics.stdev(values)
+    if stdev == 0:
+        return AnomalyResult(is_anomaly=False, score=0.0, affected_rows=0, details="All values are identical — no variance to score.")
     z_scores = [abs((v - mean) / stdev) for v in values]
     max_z = max(z_scores)
     affected = sum(1 for z in z_scores if z > threshold)
@@ -437,7 +439,7 @@ async def log_resolution(query: str, result: str, score: float) -> LogResult:
             tmp.write(content)
             tmp_path = tmp.name
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         rag_file = await loop.run_in_executor(
             _executor,
             lambda: rag.upload_file(
@@ -485,7 +487,7 @@ async def search_knowledge_base(query: str) -> KBSearchResult:
         location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
         vertexai.init(project=_PROJECT, location=location)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             _executor,
             lambda: rag.retrieval_query(
@@ -509,7 +511,7 @@ async def search_knowledge_base(query: str) -> KBSearchResult:
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("MCP_PORT", os.environ.get("PORT", 8088)))
     logger.info(f"Starting bi-tools-server on port {port}")
     asyncio.run(
         mcp.run_async(

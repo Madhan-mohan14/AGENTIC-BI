@@ -1,4 +1,5 @@
 import os
+import sys
 
 from dotenv import load_dotenv
 from google.adk.agents import LlmAgent
@@ -18,13 +19,13 @@ def _before_analysis_model(callback_context: CallbackContext, llm_request):
     for part in (llm_request.contents or []):
         for p in (part.parts or []):
             if hasattr(p, "function_call") and p.function_call:
-                print(f"[before_model] analysis_agent -> tool: {p.function_call.name}")
+                print(f"[before_model] analysis_agent -> tool: {p.function_call.name}", file=sys.stderr)
     return None
 
 
 def _after_analysis_agent(callback_context: CallbackContext) -> None:
     result = callback_context.state.get("analysis_result", "")
-    print(f"[after_agent] analysis_agent completed - {len(result)} chars")
+    print(f"[after_agent] analysis_agent completed - {len(result)} chars", file=sys.stderr)
 
 
 analysis_agent = LlmAgent(
@@ -61,7 +62,8 @@ Write your complete answer."""
                 url=_MCP_URL,
                 timeout=30.0,
                 sse_read_timeout=120.0,
-            )
+            ),
+            tool_filter=["generate_kpi_summary", "detect_anomaly"],
         )
     ],
     generate_content_config=types.GenerateContentConfig(

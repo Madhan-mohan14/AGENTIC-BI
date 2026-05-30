@@ -1,11 +1,59 @@
 {
   "criteria": {
-    "tool_trajectory_avg_score": 0.8,
-    "response_match_score": 0.7
-  },
-  "metrics": [
-    "hallucinations_v1"
-  ],
-  "model": "gemini-2.5-flash",
-  "description": "Agentic BI evaluation config — hallucination scoring + tool trajectory checks"
+    "rubric_based_tool_use_quality_v1": {
+      "threshold": 0.7,
+      "judgeModelOptions": {
+        "judgeModel": "gemini-2.5-flash",
+        "numSamples": 1
+      },
+      "rubrics": [
+        {
+          "rubricId": "cache_check_first",
+          "rubricContent": {
+            "textProperty": "For business data or analytics questions, the agent must call rag_agent first to check the knowledge cache before calling any other specialist agent. For simple greetings or capability questions that require no data, calling rag_agent is optional."
+          }
+        },
+        {
+          "rubricId": "correct_specialist_routing",
+          "rubricContent": {
+            "textProperty": "The agent must route to the correct specialist: analysis_agent for KPIs, revenue totals, anomalies, or trend detection; data_agent for SQL-based queries like top-N lists, country breakdowns, return rates, or category rankings; research_agent for why-questions about market context or external causes. For simple greetings, no specialist is needed."
+          }
+        },
+        {
+          "rubricId": "audit_gate_applied",
+          "rubricContent": {
+            "textProperty": "After receiving a BI answer from a specialist agent, the agent must call audit_agent to quality-check the answer before returning it to the user. For simple greetings or capability questions with no data, audit_agent is not required."
+          }
+        }
+      ]
+    },
+    "rubric_based_final_response_quality_v1": {
+      "threshold": 0.7,
+      "judgeModelOptions": {
+        "judgeModel": "gemini-2.5-flash",
+        "numSamples": 1
+      },
+      "rubrics": [
+        {
+          "rubricId": "directly_answers_question",
+          "rubricContent": {
+            "textProperty": "The response must directly and completely address the user's question. For BI and analytics questions it must include specific numbers, metrics, or concrete analytical findings — not vague descriptions. For greetings or capability questions, a clear helpful overview of capabilities is sufficient."
+          }
+        },
+        {
+          "rubricId": "dataset_grounded",
+          "rubricContent": {
+            "textProperty": "For BI data questions, the response must be grounded in the thelook_ecommerce dataset — it should reference actual computed values (e.g. revenue amounts, order counts, percentages, product names) rather than generic placeholders. For research or general knowledge questions, the response may reference external context without dataset numbers."
+          }
+        }
+      ]
+    },
+    "hallucinations_v1": {
+      "threshold": 0.8,
+      "judgeModelOptions": {
+        "judgeModel": "gemini-2.5-flash",
+        "numSamples": 1
+      }
+    }
+  }
 }

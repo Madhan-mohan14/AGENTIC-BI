@@ -1,0 +1,34 @@
+{
+  "eval_set_id": "bi_golden_set",
+  "name": "Batch 3 — SQL and Research",
+  "eval_cases": [
+    {
+      "eval_id": "return_rate",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "What is the overall product return rate?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "top_products_by_volume",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "What are the top 10 products by number of items sold?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "revenue_trend_weekly",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Show me the revenue trend week over week for the last 4 weeks" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "research_q1_revenue_drop",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Why might ecommerce revenue typically drop in Q1?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    }
+  ]
+}

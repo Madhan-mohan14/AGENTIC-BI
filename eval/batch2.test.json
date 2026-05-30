@@ -1,0 +1,34 @@
+{
+  "eval_set_id": "bi_golden_set",
+  "name": "Batch 2 — Anomaly and SQL",
+  "eval_cases": [
+    {
+      "eval_id": "anomaly_sale_price",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Is there an anomaly in sale_price in the order_items table?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "anomaly_inventory",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Are there any anomalies in inventory cost prices?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "orders_by_country",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Show me orders grouped by country" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "aov_by_gender",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "What is the average order value by customer gender?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    }
+  ]
+}

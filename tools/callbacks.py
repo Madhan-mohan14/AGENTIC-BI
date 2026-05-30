@@ -7,7 +7,7 @@ from google.genai.types import Content, Part
 
 logger = logging.getLogger(__name__)
 
-VALID_TABLES = ["orders", "order_items", "inventory_items", "users", "products"]
+VALID_TABLES = ["orders", "order_items", "inventory_items"]
 VALID_DATASETS = ["thelook_ecommerce", "ga4_obfuscated_sample_ecommerce"]
 
 

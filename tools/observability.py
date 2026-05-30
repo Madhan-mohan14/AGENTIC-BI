@@ -1,5 +1,6 @@
 import os
 import base64
+import sys
 
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -56,4 +57,4 @@ def setup_tracing(service_name: str = "agentic-bi-system") -> None:
         if not instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.instrument()
 
-    print(f"Tracing active -> {host}")
+    print(f"Tracing active -> {host}", file=sys.stderr)

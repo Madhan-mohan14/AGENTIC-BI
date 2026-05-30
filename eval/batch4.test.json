@@ -1,0 +1,34 @@
+{
+  "eval_set_id": "bi_golden_set",
+  "name": "Batch 4 — Research, Greeting, and Guardrails",
+  "eval_cases": [
+    {
+      "eval_id": "research_price_spike_cause",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "What typically causes sudden sale price spikes in ecommerce data?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "greeting_no_tools",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Hello, what can you help me with?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "invalid_table_corrected",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Detect anomalies in the sales table" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "schema_first_enforced",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Show me revenue by brand for the top 10 brands" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    }
+  ]
+}

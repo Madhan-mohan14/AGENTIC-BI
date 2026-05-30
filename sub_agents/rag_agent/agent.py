@@ -1,4 +1,5 @@
 import os
+import sys
 
 from dotenv import load_dotenv
 from google.adk.agents import LlmAgent
@@ -6,7 +7,6 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.genai import types
-from google.genai.types import Content, Part
 
 from tools.callbacks import after_tool_callback, before_tool_callback
 
@@ -15,18 +15,10 @@ load_dotenv()
 _MCP_URL = os.environ.get("MCP_URL", "http://127.0.0.1:8088/mcp")
 
 
-def _before_rag_agent(callback_context: CallbackContext) -> Content | None:
-    cached = callback_context.state.get("rag_result")
-    if cached and "ANSWER NOT FOUND" not in cached:
-        print("[before_agent] rag_agent - cache hit, skipping")
-        return Content(parts=[Part(text=cached)])
-    return None
-
-
 def _after_rag_agent(callback_context: CallbackContext) -> None:
     result = callback_context.state.get("rag_result", "")
     status = "FOUND" if result and "ANSWER NOT FOUND" not in result else "ANSWER NOT FOUND"
-    print(f"[after_agent] rag_agent - {status}")
+    print(f"[after_agent] rag_agent - {status}", file=sys.stderr)
 
 
 rag_agent = LlmAgent(
@@ -57,7 +49,8 @@ Do not explain, summarise, or add any other text."""
                 url=_MCP_URL,
                 timeout=30.0,
                 sse_read_timeout=60.0,
-            )
+            ),
+            tool_filter=["search_knowledge_base"],
         )
     ],
     generate_content_config=types.GenerateContentConfig(
@@ -66,7 +59,6 @@ Do not explain, summarise, or add any other text."""
         max_output_tokens=1024,
     ),
     output_key="rag_result",
-    before_agent_callback=_before_rag_agent,
     after_agent_callback=_after_rag_agent,
     before_tool_callback=before_tool_callback,
     after_tool_callback=after_tool_callback,

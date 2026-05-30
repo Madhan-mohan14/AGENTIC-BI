@@ -15,6 +15,7 @@ Cloud Run (started by Dockerfile CMD):
 import asyncio
 import hashlib
 import os
+import sys
 import uuid
 
 import uvicorn
@@ -56,11 +57,16 @@ async def score_answer(query: str, result: str) -> dict:
         "Large % changes (100%+) are normal for short windows in sparse datasets. Do NOT penalise them.\n"
         "Reply with only a number like: 0.92"
     )
-    client = genai.Client()
+    use_vertexai = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("1", "true")
+    client = genai.Client(
+        vertexai=use_vertexai,
+        project=os.environ.get("GOOGLE_CLOUD_PROJECT") if use_vertexai else None,
+        location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1") if use_vertexai else None,
+    )
     config = types.GenerateContentConfig(
         temperature=0.0,
         max_output_tokens=200,
-        thinking_config=types.ThinkingConfig(thinking_budget=512),
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     response = await asyncio.to_thread(
         client.models.generate_content,
@@ -72,7 +78,7 @@ async def score_answer(query: str, result: str) -> dict:
         score = max(0.0, min(1.0, float(response.text.strip())))
     except (ValueError, AttributeError):
         score = 0.5
-    print(f"[audit_agent] score_answer -> {score:.2f} for: {query[:60]!r}")
+    print(f"[audit_agent] score_answer -> {score:.2f} for: {query[:60]!r}", file=sys.stderr)
     return {"score": score, "passed": score >= 0.8}
 
 
@@ -80,7 +86,7 @@ async def log_to_corpus(query: str, result: str, score: float) -> dict:
     """Persist an approved BI answer directly to the Vertex AI RAG corpus."""
     corpus_id = os.environ.get("RAG_CORPUS_ID")
     if not corpus_id:
-        print("[audit_agent] log_to_corpus -> skipped (RAG_CORPUS_ID not set)")
+        print("[audit_agent] log_to_corpus -> skipped (RAG_CORPUS_ID not set)", file=sys.stderr)
         return {"logged": False, "reason": "RAG_CORPUS_ID not configured"}
 
     try:
@@ -110,16 +116,16 @@ async def log_to_corpus(query: str, result: str, score: float) -> dict:
             )
 
         executor = ThreadPoolExecutor(max_workers=1)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             rag_file = await asyncio.wait_for(
                 loop.run_in_executor(executor, _upload),
                 timeout=45.0,
             )
-            print(f"[audit_agent] log_to_corpus -> saved {rag_file.name} (score={score:.2f})")
+            print(f"[audit_agent] log_to_corpus -> saved {rag_file.name} (score={score:.2f})", file=sys.stderr)
             return {"logged": True, "chunk_id": rag_file.name}
         except asyncio.TimeoutError:
-            print("[audit_agent] log_to_corpus -> RAG upload timed out (45s), skipping")
+            print("[audit_agent] log_to_corpus -> RAG upload timed out (45s), skipping", file=sys.stderr)
             return {"logged": False, "reason": "upload timeout"}
         finally:
             try:
@@ -128,7 +134,7 @@ async def log_to_corpus(query: str, result: str, score: float) -> dict:
                 pass
 
     except Exception as exc:
-        print(f"[audit_agent] log_to_corpus failed: {exc}")
+        print(f"[audit_agent] log_to_corpus failed: {exc}", file=sys.stderr)
         return {"logged": False, "error": str(exc)}
 
 
@@ -151,9 +157,9 @@ async def escalate_hitl(
                 "score": score,
                 "session_id": session_id,
             })
-            print(f"[audit_agent] HITL escalation -> id={hitl_id} saved to Firestore")
+            print(f"[audit_agent] HITL escalation -> id={hitl_id} saved to Firestore", file=sys.stderr)
         except Exception as exc:
-            print(f"[audit_agent] Firestore write failed: {exc}")
+            print(f"[audit_agent] Firestore write failed: {exc}", file=sys.stderr)
         return {"action": "hitl", "hitl_id": hitl_id}
 
     return {"action": "regenerate", "rejection_count": _rejection_count[key]}
@@ -187,7 +193,7 @@ If failed (score < 0.8): Call escalate_hitl with query, result, score, session_i
 - action=regenerate → transfer back with "NEEDS_REGENERATION score=<score>"
 - action=hitl → transfer back with "ESCALATED_TO_HITL hitl_id=<hitl_id> score=<score>"
 
-Do not answer the user directly. Always transfer back to the orchestrator."""
+Your final response text is the tool result returned to the orchestrator — write it directly, no preamble."""
     ),
     tools=[score_answer, log_to_corpus, escalate_hitl],
     generate_content_config=types.GenerateContentConfig(

@@ -1,4 +1,7 @@
+import logging
 import os
+import re
+import sys
 
 import httpx
 from a2a.types import AgentCard
@@ -6,6 +9,8 @@ from dotenv import load_dotenv
 from google.adk.agents import LlmAgent
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
 from google.adk.tools.agent_tool import AgentTool
 from google.genai import types
 from google.genai.types import Content
@@ -18,6 +23,23 @@ from tools.observability import setup_tracing
 
 load_dotenv()
 setup_tracing()
+
+logger = logging.getLogger(__name__)
+
+# Patterns that indicate prompt injection or abuse attempts
+_INJECTION_PATTERNS = re.compile(
+    r"(ignore previous instructions|disregard (your|all) instructions|"
+    r"you are now|act as (a|an|the)|forget (you are|your role)|"
+    r"new persona|system prompt|bypass|jailbreak|DAN mode)",
+    re.IGNORECASE,
+)
+
+# Hard block: requests that have no business intelligence purpose
+_BLOCK_PATTERNS = re.compile(
+    r"\b(hack|exploit|malware|ransomware|phishing|ddos|sql.?inject|"
+    r"drop table|delete from|truncate|rm -rf|shell|exec\(|eval\()\b",
+    re.IGNORECASE,
+)
 
 
 def _load_audit_card(base_url: str) -> AgentCard:
@@ -32,10 +54,10 @@ def _load_audit_card(base_url: str) -> AgentCard:
         card_data = resp.json()
         card_data["url"] = f"{base_url}/"
         card = AgentCard.model_validate(card_data)
-        print(f"[orchestrator] audit card fetched OK — rpc_url patched to {base_url}/")
+        print(f"[orchestrator] audit card fetched OK — rpc_url patched to {base_url}/", file=sys.stderr)
         return card
     except Exception as exc:
-        print(f"[orchestrator] audit card prefetch failed ({exc}), using minimal card")
+        print(f"[orchestrator] audit card prefetch failed ({exc}), using minimal card", file=sys.stderr)
         return AgentCard(name="audit_agent", url=f"{base_url}/", version="1.0.0")
 
 
@@ -52,12 +74,60 @@ audit_agent = RemoteA2aAgent(
 
 
 def _before_orchestrator(callback_context: CallbackContext) -> Content | None:
-    """Inject session_id into state before each orchestrator turn."""
+    """Inject session_id into state before each agent turn for BQ analytics tracking."""
     try:
         session_id = callback_context._invocation_context.session.id
         callback_context.state["session_id"] = session_id
     except Exception:
         callback_context.state.setdefault("session_id", "")
+    return None
+
+
+def _safety_model_filter(
+    callback_context: CallbackContext, llm_request: LlmRequest
+) -> LlmResponse | None:
+    """
+    Model Armor substitute — runs before every LLM API call.
+    Screens the full prompt context for injection attempts and hard-blocked terms.
+    Returns LlmResponse to short-circuit the model call when a violation is found.
+    """
+    # Collect all user-role text from the request being sent to the model
+    user_text_parts: list[str] = []
+    for content in (llm_request.contents or []):
+        if getattr(content, "role", None) == "user":
+            for part in (content.parts or []):
+                text = getattr(part, "text", None)
+                if text:
+                    user_text_parts.append(text)
+    user_text = " ".join(user_text_parts)
+
+    if not user_text:
+        return None
+
+    if _BLOCK_PATTERNS.search(user_text):
+        logger.warning("[safety] hard-blocked request: %.120s", user_text)
+        return LlmResponse(
+            content=Content(
+                role="model",
+                parts=[types.Part(text=(
+                    "I can only help with business intelligence and ecommerce analytics. "
+                    "That request falls outside my scope."
+                ))],
+            )
+        )
+
+    if _INJECTION_PATTERNS.search(user_text):
+        logger.warning("[safety] injection attempt detected: %.120s", user_text)
+        return LlmResponse(
+            content=Content(
+                role="model",
+                parts=[types.Part(text=(
+                    "I detected an attempt to alter my instructions. "
+                    "I'm a BI assistant — please ask a business or analytics question."
+                ))],
+            )
+        )
+
     return None
 
 
@@ -74,6 +144,7 @@ orchestrator = LlmAgent(
         AgentTool(agent=audit_agent),
     ],
     before_agent_callback=_before_orchestrator,
+    before_model_callback=_safety_model_filter,
     instruction=(
         """You are the root orchestrator of an Agentic Business Intelligence system.
 You never answer data or analytics questions yourself. You always call your agent tools.
@@ -109,14 +180,31 @@ Never respond to the user with data yourself. Always complete all three steps an
         temperature=0.4,
         top_p=0.95,
         max_output_tokens=2048,
+        safety_settings=[
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+            ),
+        ],
     ),
 )
 
-# MODEL ARMOR — GOVERN pillar (wire after deploy by setting MODEL_ARMOR_TEMPLATE_ID env var)
-# from tools.model_armor import model_armor_interceptor, model_armor_response_interceptor
-# if os.environ.get("MODEL_ARMOR_TEMPLATE_ID"):
-#     orchestrator.before_agent_callback = model_armor_interceptor
-#     orchestrator.after_model_callback = model_armor_response_interceptor
-
 # ADK discovers this name when running `adk web` from the project root
 root_agent = orchestrator
+
+from google.adk.apps import App
+from tools.plugin import BIAgentPlugin, BigQueryAnalyticsPlugin
+
+app = App(
+    root_agent=root_agent,
+    name="orchestrator",
+    plugins=[BIAgentPlugin(), BigQueryAnalyticsPlugin()],
+)

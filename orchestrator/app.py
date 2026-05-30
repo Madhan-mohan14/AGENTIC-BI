@@ -1,4 +1,5 @@
 import os
+import sys
 
 from dotenv import load_dotenv
 from google.adk.apps import App
@@ -18,14 +19,14 @@ _IS_LOCAL = os.environ.get("LOCAL_DEV", "false").lower() == "true"
 
 def _build_session_service():
     if _IS_LOCAL or not _PROJECT:
-        print("[app] Using InMemorySessionService (LOCAL_DEV=true or no project set)")
+        print("[app] Using InMemorySessionService (LOCAL_DEV=true or no project set)", file=sys.stderr)
         return InMemorySessionService()
     try:
         svc = VertexAiSessionService(project=_PROJECT, location=_LOCATION)
-        print(f"[app] Using VertexAiSessionService (project={_PROJECT}, location={_LOCATION})")
+        print(f"[app] Using VertexAiSessionService (project={_PROJECT}, location={_LOCATION})", file=sys.stderr)
         return svc
     except Exception as exc:
-        print(f"[app] VertexAiSessionService unavailable ({exc}) — falling back to InMemory")
+        print(f"[app] VertexAiSessionService unavailable ({exc}) — falling back to InMemory", file=sys.stderr)
         return InMemorySessionService()
 
 
@@ -56,7 +57,7 @@ class AgenticBIApp:
             memory_service=_build_memory_service(),
             plugins=[BIAgentPlugin(), BigQueryAnalyticsPlugin()],
         )
-        print("[app] AgenticBIApp initialized — plugins: BIAgentPlugin, BigQueryAnalyticsPlugin")
+        print("[app] AgenticBIApp initialized — plugins: BIAgentPlugin, BigQueryAnalyticsPlugin", file=sys.stderr)
 
     @property
     def runner(self):

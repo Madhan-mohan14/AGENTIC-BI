@@ -1,0 +1,34 @@
+{
+  "eval_set_id": "bi_golden_set",
+  "name": "Batch 1 — KPI and Customer",
+  "eval_cases": [
+    {
+      "eval_id": "kpi_30d",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "What are the KPIs for the last 30 days?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "kpi_7d",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Show me KPIs for the last 7 days" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "top_customers",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "Show me the top 5 customers by total revenue" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    },
+    {
+      "eval_id": "product_categories",
+      "conversation": [
+        { "user_content": { "parts": [{ "text": "What are the top 5 product categories by revenue?" }] } }
+      ],
+      "session_input": { "app_name": "orchestrator", "user_id": "eval_user", "state": {} }
+    }
+  ]
+}

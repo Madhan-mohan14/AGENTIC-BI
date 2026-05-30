@@ -24,6 +24,7 @@ build/
 .claude/
 .gcloudignore
 CLAUDE.md
+.vscode/
 
 # ── ADK internals ────────────────────────────────────────────────────────────
 .adk/
@@ -32,6 +33,9 @@ sessions.db
 # ── MCP Toolbox binary + local config ────────────────────────────────────────
 toolbox.exe
 tools/tools.yaml
+
+# ── Terraform local values (contain project IDs) ─────────────────────────────
+deployment/terraform/single-project/vars/env.tfvars
 
 # ── Runtime state ────────────────────────────────────────────────────────────
 hitl_queue.json
