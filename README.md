@@ -363,6 +363,18 @@ Most "multi-agent" demos are wrappers. They call one LLM, maybe two, and label i
 
 <div align="center">
 
+## 🐛 Found a Bug? Have an Idea?
+
+This project is actively maintained and I genuinely want your feedback.
+
+- **Something broken?** → [Open an issue](https://github.com/Madhan-mohan14/Agentic-BI/issues/new) with what you expected vs. what happened. Even a one-liner helps.
+- **Have an improvement?** → PRs are welcome. Fork the repo, make your change, and open a pull request — I'll review it.
+- **Not sure if it's a bug?** → Just open an issue anyway. Worst case we close it. Best case we find something real.
+
+If you're building something similar and want to talk architecture, reach out directly — I'm always up for that conversation.
+
+---
+
 ## 🤝 Connect
 
 If this project helped you understand agentic AI architecture, consider giving it a ⭐
